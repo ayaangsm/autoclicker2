@@ -13,7 +13,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
-import android.graphics.Rect
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -36,13 +35,21 @@ class FloatingButtonService : Service() {
 
     private var panelView: LinearLayout? = null
     private var panelParams: WindowManager.LayoutParams? = null
-    private var touchOverlay: View? = null
+    private var crosshairView: View? = null
+    private var crosshairParams: WindowManager.LayoutParams? = null
+    private var crosshairX = 400f
+    private var crosshairY = 400f
+    private var deleteIndex = -1
     private var dotsView: DotsView? = null
     private var dotsVisible = true
 
     private lateinit var btnStart: TextView
     private lateinit var btnAdd: TextView
+    private lateinit var btnConfirm: TextView
     private lateinit var btnDelete: TextView
+    private lateinit var btnDelPrev: TextView
+    private lateinit var btnDelNext: TextView
+    private lateinit var btnDelConfirm: TextView
     private lateinit var btnShow: TextView
     private lateinit var btnHide: TextView
     private lateinit var tvStatus: TextView
@@ -50,8 +57,8 @@ class FloatingButtonService : Service() {
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val count = intent.getIntExtra("count", 0)
-            setStatus("✓ Clicked $count!", "#00ff88")
-            handler.postDelayed({ setStatus("Ready — ${points.size} pts", "#8aabb0") }, 2500)
+            setStatus("✓ Tapped $count!", "#00ff88")
+            handler.postDelayed({ setStatus("${points.size} pts saved", "#8aabb0") }, 2500)
         }
     }
 
@@ -63,25 +70,32 @@ class FloatingButtonService : Service() {
         startForeground(1, buildNotification())
         createDotsView()
         createPanel()
-        registerReceiver(statusReceiver,
+        registerReceiver(
+            statusReceiver,
             IntentFilter(CheckboxAccessibilityService.ACTION_STATUS),
-            Context.RECEIVER_NOT_EXPORTED)
-        setStatus("Ready — ${points.size} pts", "#8aabb0")
+            Context.RECEIVER_NOT_EXPORTED
+        )
+        setStatus("${points.size} pts saved", "#8aabb0")
     }
 
     private fun createPanel() {
         panelView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#F00a0c0f"))
-            setPadding(10, 10, 10, 10)
+            setBackgroundColor(Color.parseColor("#F20a0c0f"))
+            setPadding(8, 8, 8, 8)
         }
 
-        btnStart  = makeBtn("▶ START",  "#00e5ff", "#000000")
-        btnAdd    = makeBtn("＋ ADD",    "#00ff88", "#000000")
-        btnDelete = makeBtn("✕ DELETE", "#ff3d71", "#ffffff")
-        btnShow   = makeBtn("● SHOW",   "#444444", "#ffffff")
-        btnHide   = makeBtn("○ HIDE",   "#222222", "#aaaaaa")
-        tvStatus  = TextView(this).apply {
+        btnStart      = makeBtn("▶ START",   "#00e5ff", "#000000")
+        btnAdd        = makeBtn("＋ ADD",     "#00ff88", "#000000")
+        btnConfirm    = makeBtn("✓ CONFIRM", "#ffaa00", "#000000")
+        btnDelete     = makeBtn("✕ DELETE",  "#ff3d71", "#ffffff")
+        btnDelPrev    = makeBtn("◀ PREV",    "#884444", "#ffffff")
+        btnDelNext    = makeBtn("NEXT ▶",    "#884444", "#ffffff")
+        btnDelConfirm = makeBtn("🗑 REMOVE", "#ff0000", "#ffffff")
+        btnShow       = makeBtn("● SHOW",    "#444444", "#ffffff")
+        btnHide       = makeBtn("○ HIDE",    "#222222", "#aaaaaa")
+
+        tvStatus = TextView(this).apply {
             text = "..."
             textSize = 9f
             setTextColor(Color.parseColor("#8aabb0"))
@@ -90,20 +104,40 @@ class FloatingButtonService : Service() {
         }
 
         panelView!!.apply {
-            addView(btnStart);  addView(gap())
-            addView(btnAdd);    addView(btnDelete); addView(gap())
-            addView(btnShow);   addView(btnHide)
+            addView(btnStart)
+            addView(gap())
+            addView(btnAdd)
+            addView(btnConfirm)
+            addView(gap())
+            addView(btnDelete)
+            addView(btnDelPrev)
+            addView(btnDelNext)
+            addView(btnDelConfirm)
+            addView(gap())
+            addView(btnShow)
+            addView(btnHide)
             addView(tvStatus)
         }
 
+        btnConfirm.visibility    = View.GONE
+        btnDelPrev.visibility    = View.GONE
+        btnDelNext.visibility    = View.GONE
+        btnDelConfirm.visibility = View.GONE
+
+        // Panel anchored to middle of right edge
         panelParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.END; x = 4; y = 380 }
+        ).apply {
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            x = 4
+            y = 0
+        }
 
+        // Drag panel
         var ix = 0; var iy = 0; var itx = 0f; var ity = 0f; var dragging = false
         panelView!!.setOnTouchListener { _, e ->
             when (e.action) {
@@ -125,18 +159,22 @@ class FloatingButtonService : Service() {
             }
         }
 
-        btnStart.setOnClickListener  { onStartClick() }
-        btnAdd.setOnClickListener    { onAddClick() }
-        btnDelete.setOnClickListener { onDeleteClick() }
-        btnShow.setOnClickListener   { onShowClick() }
-        btnHide.setOnClickListener   { onHideClick() }
+        btnStart.setOnClickListener      { onStartClick() }
+        btnAdd.setOnClickListener        { onAddClick() }
+        btnConfirm.setOnClickListener    { onConfirmClick() }
+        btnDelete.setOnClickListener     { onDeleteClick() }
+        btnDelPrev.setOnClickListener    { onDelPrev() }
+        btnDelNext.setOnClickListener    { onDelNext() }
+        btnDelConfirm.setOnClickListener { onDelConfirm() }
+        btnShow.setOnClickListener       { onShowClick() }
+        btnHide.setOnClickListener       { onHideClick() }
 
         wm.addView(panelView, panelParams)
     }
 
     private fun onStartClick() {
-        if (points.isEmpty()) { setStatus("Add points first!", "#ff9900"); return }
         cancelMode()
+        if (points.isEmpty()) { setStatus("No points saved!", "#ff9900"); return }
         val coords = FloatArray(points.size * 2)
         points.forEachIndexed { i, (x, y) -> coords[i*2] = x; coords[i*2+1] = y }
         setStatus("Firing ${points.size} taps...", "#ff9900")
@@ -150,109 +188,166 @@ class FloatingButtonService : Service() {
         if (mode == Mode.ADD) { cancelMode(); return }
         cancelMode()
         mode = Mode.ADD
-        btnAdd.text = "✓ DONE"
-        btnAdd.setBackgroundColor(Color.parseColor("#ffaa00"))
-        setStatus("Tap each checkbox once, then DONE", "#ffaa00")
-        installOverlay { x, y ->
-            points.add(Pair(x, y))
-            savePoints(); refreshDots()
-            setStatus("Added #${points.size} — tap DONE when finished", "#00ff88")
-        }
+        btnAdd.text = "✕ CANCEL"
+        btnAdd.setBackgroundColor(Color.parseColor("#888888"))
+        btnConfirm.visibility = View.VISIBLE
+        setStatus("Drag ✛ to checkbox → CONFIRM", "#ffaa00")
+        showCrosshair()
+    }
+
+    private fun onConfirmClick() {
+        points.add(Pair(crosshairX, crosshairY))
+        savePoints()
+        refreshDots()
+        setStatus("Saved #${points.size} — drag to next or CANCEL", "#00ff88")
     }
 
     private fun onDeleteClick() {
         if (mode == Mode.DELETE) { cancelMode(); return }
+        if (points.isEmpty()) { setStatus("No points to delete!", "#ff9900"); return }
         cancelMode()
         mode = Mode.DELETE
-        btnDelete.text = "✓ DONE"
-        btnDelete.setBackgroundColor(Color.parseColor("#cc0000"))
-        dotsVisible = true; refreshDots()
-        setStatus("Tap a numbered dot to delete it", "#ff3d71")
-        installOverlay { x, y ->
-            val nearest = points.minByOrNull { (px, py) ->
-                Math.sqrt(((px-x)*(px-x)+(py-y)*(py-y)).toDouble()) }
-            if (nearest != null) {
-                val dist = Math.sqrt(((nearest.first-x)*(nearest.first-x)+
-                        (nearest.second-y)*(nearest.second-y)).toDouble())
-                if (dist < 80) {
-                    points.remove(nearest); savePoints(); refreshDots()
-                    setStatus("Deleted. ${points.size} remaining", "#ff3d71")
-                } else setStatus("Tap closer to a dot", "#ff9900")
-            }
-        }
+        deleteIndex = 0
+        btnDelete.text = "✕ CANCEL"
+        btnDelete.setBackgroundColor(Color.parseColor("#888888"))
+        btnDelPrev.visibility    = View.VISIBLE
+        btnDelNext.visibility    = View.VISIBLE
+        btnDelConfirm.visibility = View.VISIBLE
+        dotsVisible = true
+        refreshDots()
+        highlightDelete()
+    }
+
+    private fun onDelPrev() {
+        if (points.isEmpty()) return
+        deleteIndex = (deleteIndex - 1 + points.size) % points.size
+        highlightDelete()
+    }
+
+    private fun onDelNext() {
+        if (points.isEmpty()) return
+        deleteIndex = (deleteIndex + 1) % points.size
+        highlightDelete()
+    }
+
+    private fun onDelConfirm() {
+        if (deleteIndex < 0 || deleteIndex >= points.size) return
+        points.removeAt(deleteIndex)
+        savePoints()
+        if (points.isEmpty()) { cancelMode(); setStatus("All points cleared", "#ff3d71"); return }
+        deleteIndex = deleteIndex.coerceAtMost(points.size - 1)
+        refreshDots()
+        highlightDelete()
+    }
+
+    private fun highlightDelete() {
+        dotsView?.setHighlight(deleteIndex)
+        setStatus("Selected #${deleteIndex+1} of ${points.size} — REMOVE or ◀▶", "#ff3d71")
     }
 
     private fun onShowClick() {
-        dotsVisible = true; refreshDots()
+        dotsVisible = true
+        dotsView?.setHighlight(-1)
+        refreshDots()
         btnShow.setBackgroundColor(Color.parseColor("#00e5ff"))
         btnHide.setBackgroundColor(Color.parseColor("#222222"))
         setStatus("Showing ${points.size} dots", "#8aabb0")
     }
 
     private fun onHideClick() {
-        dotsVisible = false; refreshDots()
+        dotsVisible = false
+        refreshDots()
         btnShow.setBackgroundColor(Color.parseColor("#444444"))
         btnHide.setBackgroundColor(Color.parseColor("#00e5ff"))
-        setStatus("Dots hidden — still active", "#8aabb0")
+        setStatus("Dots hidden — ${points.size} active", "#8aabb0")
     }
 
     private fun cancelMode() {
         mode = Mode.NONE
-        removeTouchOverlay()
-        btnAdd.text = "＋ ADD"; btnAdd.setBackgroundColor(Color.parseColor("#00ff88"))
-        btnDelete.text = "✕ DELETE"; btnDelete.setBackgroundColor(Color.parseColor("#ff3d71"))
-        setStatus("Ready — ${points.size} pts", "#8aabb0")
+        deleteIndex = -1
+        hideCrosshair()
+        btnAdd.text = "＋ ADD"
+        btnAdd.setBackgroundColor(Color.parseColor("#00ff88"))
+        btnConfirm.visibility    = View.GONE
+        btnDelete.text = "✕ DELETE"
+        btnDelete.setBackgroundColor(Color.parseColor("#ff3d71"))
+        btnDelPrev.visibility    = View.GONE
+        btnDelNext.visibility    = View.GONE
+        btnDelConfirm.visibility = View.GONE
+        dotsView?.setHighlight(-1)
+        refreshDots()
+        setStatus("${points.size} pts saved", "#8aabb0")
     }
 
-    // Overlay that passes taps through to panel buttons
-    private fun installOverlay(onTap: (Float, Float) -> Unit) {
-        removeTouchOverlay()
-        val overlay = object : View(this) {
-            override fun onTouchEvent(e: MotionEvent): Boolean {
-                if (e.action != MotionEvent.ACTION_DOWN) return true
-                // If tap hits the panel — don't consume, let panel handle it
-                if (isTapOnPanel(e.rawX, e.rawY)) return false
-                onTap(e.rawX, e.rawY)
-                return true
+    private fun showCrosshair() {
+        hideCrosshair()
+        val size = 130
+        val ch = object : View(this) {
+            private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#ff3d71"); strokeWidth = 4f; style = Paint.Style.STROKE }
+            private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#44ff3d71"); style = Paint.Style.FILL }
+            override fun onDraw(canvas: Canvas) {
+                val cx = width / 2f; val cy = height / 2f
+                canvas.drawCircle(cx, cy, 40f, fillPaint)
+                canvas.drawCircle(cx, cy, 40f, linePaint)
+                canvas.drawLine(cx - 55f, cy, cx + 55f, cy, linePaint)
+                canvas.drawLine(cx, cy - 55f, cx, cy + 55f, linePaint)
             }
         }
-        val p = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
+
+        crosshairParams = WindowManager.LayoutParams(
+            size, size,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT)
-        wm.addView(overlay, p)
-        touchOverlay = overlay
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = (crosshairX - size / 2).toInt().coerceAtLeast(0)
+            y = (crosshairY - size / 2).toInt().coerceAtLeast(0)
+        }
+
+        var itx = 0f; var ity = 0f; var iox = 0; var ioy = 0
+        ch.setOnTouchListener { _, e ->
+            when (e.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    itx = e.rawX; ity = e.rawY
+                    iox = crosshairParams!!.x; ioy = crosshairParams!!.y; true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    crosshairParams!!.x = iox + (e.rawX - itx).toInt()
+                    crosshairParams!!.y = ioy + (e.rawY - ity).toInt()
+                    crosshairX = crosshairParams!!.x + size / 2f
+                    crosshairY = crosshairParams!!.y + size / 2f
+                    wm.updateViewLayout(ch, crosshairParams); true
+                }
+                else -> false
+            }
+        }
+
+        wm.addView(ch, crosshairParams)
+        crosshairView = ch
+        crosshairX = 400f; crosshairY = 400f
     }
 
-    private fun isTapOnPanel(rawX: Float, rawY: Float): Boolean {
-        val v = panelView ?: return false
-        val loc = IntArray(2)
-        v.getLocationOnScreen(loc)
-        val rect = Rect(loc[0] - 20, loc[1] - 20,
-            loc[0] + v.width + 20, loc[1] + v.height + 20)
-        return rect.contains(rawX.toInt(), rawY.toInt())
-    }
-
-    private fun removeTouchOverlay() {
-        touchOverlay?.let { try { wm.removeView(it) } catch (_: Exception) {} }
-        touchOverlay = null
+    private fun hideCrosshair() {
+        crosshairView?.let { try { wm.removeView(it) } catch (_: Exception) {} }
+        crosshairView = null
     }
 
     inner class DotsView(context: Context) : View(context) {
-        private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#CC00e5ff"); style = Paint.Style.FILL }
-        private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 4f }
-        private val num = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.BLACK; textSize = 28f
-            textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+        private var highlight = -1
+        fun setHighlight(i: Int) { highlight = i; postInvalidate() }
+
+        private val fill   = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#CC00e5ff"); style = Paint.Style.FILL }
+        private val hlFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#CCff3d71"); style = Paint.Style.FILL }
+        private val ring   = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 4f }
+        private val num    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 28f; textAlign = Paint.Align.CENTER; isFakeBoldText = true }
 
         override fun onDraw(canvas: Canvas) {
             if (!dotsVisible) return
             points.forEachIndexed { i, (x, y) ->
-                canvas.drawCircle(x, y, 30f, fill)
+                canvas.drawCircle(x, y, 30f, if (i == highlight) hlFill else fill)
                 canvas.drawCircle(x, y, 30f, ring)
                 canvas.drawText("${i+1}", x, y + 10f, num)
             }
@@ -261,14 +356,13 @@ class FloatingButtonService : Service() {
 
     private fun createDotsView() {
         dotsView = DotsView(this)
-        val p = WindowManager.LayoutParams(
+        wm.addView(dotsView, WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-            PixelFormat.TRANSLUCENT)
-        wm.addView(dotsView, p)
+            PixelFormat.TRANSLUCENT))
     }
 
     private fun refreshDots() { dotsView?.postInvalidate() }
@@ -299,7 +393,8 @@ class FloatingButtonService : Service() {
         text = label; textSize = 11f
         setTextColor(Color.parseColor(fg))
         setBackgroundColor(Color.parseColor(bg))
-        setPadding(18, 14, 18, 14); gravity = Gravity.CENTER
+        setPadding(18, 12, 18, 12)
+        gravity = Gravity.CENTER
         typeface = android.graphics.Typeface.DEFAULT_BOLD
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -309,7 +404,7 @@ class FloatingButtonService : Service() {
 
     private fun gap() = View(this).apply {
         layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 8) }
+            LinearLayout.LayoutParams.MATCH_PARENT, 6) }
 
     private fun buildNotification(): Notification {
         val id = "chk"
