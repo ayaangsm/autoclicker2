@@ -97,7 +97,7 @@ class FloatingButtonService : Service() {
 
         tvStatus = TextView(this).apply {
             text = "..."
-            textSize = 8f
+            textSize = 15f
             setTextColor(Color.parseColor("#8aabb0"))
             gravity = Gravity.CENTER
             setPadding(0, 3, 0, 0)
