@@ -1,5 +1,6 @@
 package com.checkboxclicker
 
+import kotlin.math.abs
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.BroadcastReceiver
