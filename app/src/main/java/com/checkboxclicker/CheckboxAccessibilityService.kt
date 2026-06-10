@@ -85,33 +85,30 @@ class CheckboxAccessibilityService : AccessibilityService() {
     }
 
     private fun collectTargets(node: AccessibilityNodeInfo, result: MutableList<AccessibilityNodeInfo>) {
-        val className = node.className?.toString() ?: ""
+    val bounds = Rect()
+    node.getBoundsInScreen(bounds)
+    val w = bounds.width()
+    val h = bounds.height()
 
-        val isCheckbox = className.contains("CheckBox", ignoreCase = true)
-                || className.contains("CompoundButton", ignoreCase = true)
-                || className.contains("Switch", ignoreCase = true)
-                || className.contains("ToggleButton", ignoreCase = true)
-                || node.isCheckable
+    // Match small square-ish elements (checkboxes are ~60x60px)
+    val isSquarish = w in 30..150 && h in 30..150 && kotlin.math.abs(w - h) < 60
 
-        // Also catch custom checkboxes — clickable items that have a checked state
-        // or are small square-ish elements (typical checkbox size)
-        val bounds = Rect()
-        node.getBoundsInScreen(bounds)
-        val w = bounds.width()
-        val h = bounds.height()
-        val isSmallClickable = node.isClickable && w in 20..120 && h in 20..120
-                && w > 0 && h > 0
+    // Must be visible and either clickable or checkable
+    val isTarget = (node.isClickable || node.isCheckable || node.isEnabled)
+            && isSquarish
+            && !bounds.isEmpty
+            && node.isVisibleToUser
 
-        if ((isCheckbox || isSmallClickable) && node.isEnabled) {
-            result.add(AccessibilityNodeInfo.obtain(node))
-        }
-
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            collectTargets(child, result)
-            child.recycle()
-        }
+    if (isTarget) {
+        result.add(AccessibilityNodeInfo.obtain(node))
     }
+
+    for (i in 0 until node.childCount) {
+        val child = node.getChild(i) ?: continue
+        collectTargets(child, result)
+        child.recycle()
+    }
+}
 
     private fun tryClickNode(node: AccessibilityNodeInfo) {
         // Try accessibility click first
