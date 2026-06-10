@@ -85,7 +85,7 @@ class FloatingButtonService : Service() {
             setPadding(6, 6, 6, 6)
         }
 
-        btnStart      = makeBtn("▶ START",   "#00e5ff", "#000000" 14f)
+        btnStart      = makeBtn("▶ START",   "#00e5ff", "#000000")
         btnAdd        = makeBtn("＋ ADD",     "#00ff88", "#000000")
         btnConfirm    = makeBtn("✓ CONFIRM", "#ffaa00", "#000000")
         btnDelete     = makeBtn("✕ DELETE",  "#ff3d71", "#ffffff")
@@ -97,7 +97,7 @@ class FloatingButtonService : Service() {
 
         tvStatus = TextView(this).apply {
             text = "..."
-            textSize = 15f
+            textSize = 8f
             setTextColor(Color.parseColor("#8aabb0"))
             gravity = Gravity.CENTER
             setPadding(0, 3, 0, 0)
