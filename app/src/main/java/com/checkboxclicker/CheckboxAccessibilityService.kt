@@ -31,14 +31,14 @@ class CheckboxAccessibilityService : AccessibilityService() {
             for (i in 0 until count) {
                 val x = coords[i * 2]
                 val y = coords[i * 2 + 1]
-                handler.postDelayed({ tap(x, y) }, i * 40L)
+                handler.postDelayed({ tap(x, y) }, i * 100L)
             }
             handler.postDelayed({
                 sendBroadcast(Intent(ACTION_STATUS).apply {
                     putExtra("count", count)
                     setPackage(packageName)
                 })
-            }, count * 40L)
+            }, count * 100L)
         }
     }
 
