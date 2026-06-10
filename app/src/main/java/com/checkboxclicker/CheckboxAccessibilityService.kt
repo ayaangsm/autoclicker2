@@ -15,8 +15,8 @@ class CheckboxAccessibilityService : AccessibilityService() {
 
     companion object {
         const val ACTION_CLICK_ALL = "com.checkboxclicker.CLICK_ALL"
-        const val ACTION_STATUS = "com.checkboxclicker.STATUS"
-        const val EXTRA_COORDS = "coords"
+        const val ACTION_STATUS    = "com.checkboxclicker.STATUS"
+        const val EXTRA_COORDS     = "coords"
         var instance: CheckboxAccessibilityService? = null
     }
 
@@ -24,17 +24,28 @@ class CheckboxAccessibilityService : AccessibilityService() {
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == ACTION_CLICK_ALL) {
-                val coords = intent.getFloatArrayExtra(EXTRA_COORDS) ?: return
-                fireAllTaps(coords)
+            if (intent.action != ACTION_CLICK_ALL) return
+            val coords = intent.getFloatArrayExtra(EXTRA_COORDS) ?: return
+            val count = coords.size / 2
+            if (count == 0) return
+            for (i in 0 until count) {
+                val x = coords[i * 2]
+                val y = coords[i * 2 + 1]
+                handler.postDelayed({ tap(x, y) }, i * 400L)
             }
+            handler.postDelayed({
+                sendBroadcast(Intent(ACTION_STATUS).apply {
+                    putExtra("count", count)
+                    setPackage(packageName)
+                })
+            }, count * 400L)
         }
     }
 
     override fun onServiceConnected() {
-        super.onServiceConnected()
         instance = this
-        registerReceiver(receiver, IntentFilter(ACTION_CLICK_ALL), Context.RECEIVER_NOT_EXPORTED)
+        registerReceiver(receiver, IntentFilter(ACTION_CLICK_ALL),
+            Context.RECEIVER_NOT_EXPORTED)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {}
@@ -42,41 +53,13 @@ class CheckboxAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        try { unregisterReceiver(receiver) } catch (e: Exception) {}
+        try { unregisterReceiver(receiver) } catch (_: Exception) {}
         instance = null
     }
 
-    private fun fireAllTaps(coords: FloatArray) {
-        // coords = [x0, y0, x1, y1, x2, y2, ...]
-        val count = coords.size / 2
-        if (count == 0) {
-            sendStatus(0, "No saved positions")
-            return
-        }
-        for (i in 0 until count) {
-            val x = coords[i * 2]
-            val y = coords[i * 2 + 1]
-            handler.postDelayed({
-                performTap(x, y)
-                if (i == count - 1) {
-                    sendStatus(count, "Clicked $count checkboxes!")
-                }
-            }, (i * 350).toLong())
-        }
-    }
-
-    private fun performTap(x: Float, y: Float) {
+    private fun tap(x: Float, y: Float) {
         val path = Path().apply { moveTo(x, y) }
         val stroke = GestureDescription.StrokeDescription(path, 0, 100)
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        dispatchGesture(gesture, null, null)
-    }
-
-    private fun sendStatus(count: Int, message: String) {
-        sendBroadcast(Intent(ACTION_STATUS).apply {
-            putExtra("count", count)
-            putExtra("message", message)
-            setPackage(packageName)
-        })
+        dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
     }
 }
