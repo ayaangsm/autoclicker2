@@ -1,6 +1,5 @@
 package com.checkboxclicker
 
-import kotlin.math.abs
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.BroadcastReceiver
@@ -22,29 +21,23 @@ class CheckboxAccessibilityService : AccessibilityService() {
         const val ACTION_CLICK_ALL = "com.checkboxclicker.CLICK_ALL"
         const val ACTION_STATUS = "com.checkboxclicker.STATUS"
         var instance: CheckboxAccessibilityService? = null
-        var lastClickCount = 0
     }
 
     private val handler = Handler(Looper.getMainLooper())
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == ACTION_CLICK_ALL) {
-                clickAllCheckboxes()
-            }
+            if (intent.action == ACTION_CLICK_ALL) clickAllCheckboxes()
         }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        val filter = IntentFilter(ACTION_CLICK_ALL)
-        registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        Log.d(TAG, "Service connected")
+        registerReceiver(receiver, IntentFilter(ACTION_CLICK_ALL), Context.RECEIVER_NOT_EXPORTED)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {}
-
     override fun onInterrupt() {}
 
     override fun onDestroy() {
@@ -53,104 +46,114 @@ class CheckboxAccessibilityService : AccessibilityService() {
         instance = null
     }
 
-    fun clickAllCheckboxes() {
+    private fun clickAllCheckboxes() {
         val root = rootInActiveWindow ?: run {
-            sendStatus(0, "No active window found")
+            sendStatus(0, "No active window")
             return
         }
 
-        val targets = mutableListOf<AccessibilityNodeInfo>()
-        collectTargets(root, targets)
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
 
-        Log.d(TAG, "Found ${targets.size} targets")
-        lastClickCount = targets.size
-
-        if (targets.isEmpty()) {
-            sendStatus(0, "No checkboxes found on screen")
-            root.recycle()
-            return
-        }
-
-        // Click each with a small delay between
-        targets.forEachIndexed { index, node ->
-            handler.postDelayed({
-                tryClickNode(node)
-                node.recycle()
-                if (index == targets.size - 1) {
-                    sendStatus(targets.size, "Done! Clicked ${targets.size} item(s)")
-                }
-            }, (index * 150).toLong())
-        }
-
+        val allNodes = mutableListOf<NodeInfo>()
+        collectAllNodes(root, allNodes)
         root.recycle()
-    }
 
-    private fun collectTargets(node: AccessibilityNodeInfo, result: MutableList<AccessibilityNodeInfo>) {
-    val bounds = Rect()
-    node.getBoundsInScreen(bounds)
-    val w = bounds.width()
-    val h = bounds.height()
+        val tapTargets = mutableListOf<Pair<Float, Float>>()
 
-    // Match small square-ish elements (checkboxes are ~60x60px)
-    val isSquarish = w in 30..150 && h in 30..150 && kotlin.math.abs(w - h) < 60
-
-    // Must be visible and either clickable or checkable
-    val isTarget = (node.isClickable || node.isCheckable || node.isEnabled)
-            && isSquarish
-            && !bounds.isEmpty
-            && node.isVisibleToUser
-
-    if (isTarget) {
-        result.add(AccessibilityNodeInfo.obtain(node))
-    }
-
-    for (i in 0 until node.childCount) {
-        val child = node.getChild(i) ?: continue
-        collectTargets(child, result)
-        child.recycle()
-    }
-}
-
-    private fun tryClickNode(node: AccessibilityNodeInfo) {
-        // Try accessibility click first
-        if (node.isClickable) {
-            val clicked = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            if (clicked) return
+        for (info in allNodes) {
+            val score = scoreAsCheckbox(info, screenWidth, screenHeight)
+            if (score >= 3) {
+                val cx = info.bounds.centerX().toFloat()
+                val cy = info.bounds.centerY().toFloat()
+                val dup = tapTargets.any { (px, py) ->
+                    kotlin.math.abs(px - cx) < 40 && kotlin.math.abs(py - cy) < 40
+                }
+                if (!dup) tapTargets.add(Pair(cx, cy))
+            }
         }
 
-        // Try clicking parent
-        val parent = node.parent
-        if (parent != null) {
-            if (parent.isClickable) {
-                parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            }
-            parent.recycle()
+        if (tapTargets.isEmpty()) {
+            sendStatus(0, "No checkboxes found")
             return
         }
 
-        // Fallback: gesture tap at center of node
+        val sorted = tapTargets.sortedBy { it.second }
+
+        sorted.forEachIndexed { index, (x, y) ->
+            handler.postDelayed({
+                performTap(x, y)
+                if (index == sorted.size - 1) {
+                    sendStatus(sorted.size, "Clicked ${sorted.size} checkboxes!")
+                }
+            }, (index * 400).toLong())
+        }
+    }
+
+    private fun scoreAsCheckbox(info: NodeInfo, screenW: Int, screenH: Int): Int {
+        var score = 0
+        val b = info.bounds
+        val w = b.width()
+        val h = b.height()
+
+        if (w <= 0 || h <= 0) return 0
+        if (!info.isVisible) return 0
+
+        val cls = info.className
+        if (cls.contains("CheckBox", true) || cls.contains("CompoundButton", true)) score += 5
+        if (info.isCheckable) score += 4
+
+        val aspectRatio = w.toFloat() / h.toFloat()
+        if (aspectRatio in 0.7f..1.4f) score += 2
+        if (w in 40..130 && h in 40..130) score += 2
+        if (b.left > screenW * 0.65f) score += 3
+        if (h < screenH * 0.15f) score += 1
+        if (info.isClickable) score += 1
+        if (cls.contains("ImageView", true) && aspectRatio in 0.7f..1.4f
+            && b.left > screenW * 0.65f) score += 2
+
+        return score
+    }
+
+    data class NodeInfo(
+        val className: String,
+        val bounds: Rect,
+        val isCheckable: Boolean,
+        val isClickable: Boolean,
+        val isVisible: Boolean,
+        val isChecked: Boolean
+    )
+
+    private fun collectAllNodes(node: AccessibilityNodeInfo, result: MutableList<NodeInfo>) {
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
-        if (!bounds.isEmpty) {
-            val cx = bounds.centerX().toFloat()
-            val cy = bounds.centerY().toFloat()
-            performTap(cx, cy)
+        result.add(NodeInfo(
+            className = node.className?.toString() ?: "",
+            bounds = Rect(bounds),
+            isCheckable = node.isCheckable,
+            isClickable = node.isClickable,
+            isVisible = node.isVisibleToUser,
+            isChecked = node.isChecked
+        ))
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectAllNodes(child, result)
+            child.recycle()
         }
     }
 
     private fun performTap(x: Float, y: Float) {
         val path = Path().apply { moveTo(x, y) }
-        val stroke = GestureDescription.StrokeDescription(path, 0, 50)
+        val stroke = GestureDescription.StrokeDescription(path, 0, 100)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
     }
 
     private fun sendStatus(count: Int, message: String) {
-        val intent = Intent(ACTION_STATUS).apply {
+        sendBroadcast(Intent(ACTION_STATUS).apply {
             putExtra("count", count)
             putExtra("message", message)
             setPackage(packageName)
-        }
-        sendBroadcast(intent)
+        })
     }
 }
