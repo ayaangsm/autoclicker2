@@ -82,25 +82,25 @@ class FloatingButtonService : Service() {
         panelView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#F20a0c0f"))
-            setPadding(8, 8, 8, 8)
+            setPadding(6, 6, 6, 6)
         }
 
         btnStart      = makeBtn("▶ START",   "#00e5ff", "#000000")
         btnAdd        = makeBtn("＋ ADD",     "#00ff88", "#000000")
         btnConfirm    = makeBtn("✓ CONFIRM", "#ffaa00", "#000000")
         btnDelete     = makeBtn("✕ DELETE",  "#ff3d71", "#ffffff")
-        btnDelPrev    = makeBtn("◀ PREV",    "#884444", "#ffffff")
-        btnDelNext    = makeBtn("NEXT ▶",    "#884444", "#ffffff")
-        btnDelConfirm = makeBtn("🗑 REMOVE", "#ff0000", "#ffffff")
+        btnDelPrev    = makeBtn("◀",         "#884444", "#ffffff")
+        btnDelNext    = makeBtn("▶",         "#884444", "#ffffff")
+        btnDelConfirm = makeBtn("🗑 DEL",    "#ff0000", "#ffffff")
         btnShow       = makeBtn("● SHOW",    "#444444", "#ffffff")
         btnHide       = makeBtn("○ HIDE",    "#222222", "#aaaaaa")
 
         tvStatus = TextView(this).apply {
             text = "..."
-            textSize = 9f
+            textSize = 8f
             setTextColor(Color.parseColor("#8aabb0"))
             gravity = Gravity.CENTER
-            setPadding(0, 4, 0, 0)
+            setPadding(0, 3, 0, 0)
         }
 
         panelView!!.apply {
@@ -110,8 +110,17 @@ class FloatingButtonService : Service() {
             addView(btnConfirm)
             addView(gap())
             addView(btnDelete)
-            addView(btnDelPrev)
-            addView(btnDelNext)
+            // PREV and NEXT side by side
+            val delRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            delRow.addView(btnDelPrev)
+            delRow.addView(btnDelNext)
+            addView(delRow)
             addView(btnDelConfirm)
             addView(gap())
             addView(btnShow)
@@ -124,7 +133,6 @@ class FloatingButtonService : Service() {
         btnDelNext.visibility    = View.GONE
         btnDelConfirm.visibility = View.GONE
 
-        // Panel anchored to middle of right edge
         panelParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -137,7 +145,6 @@ class FloatingButtonService : Service() {
             y = 0
         }
 
-        // Drag panel
         var ix = 0; var iy = 0; var itx = 0f; var ity = 0f; var dragging = false
         panelView!!.setOnTouchListener { _, e ->
             when (e.action) {
@@ -234,7 +241,7 @@ class FloatingButtonService : Service() {
         if (deleteIndex < 0 || deleteIndex >= points.size) return
         points.removeAt(deleteIndex)
         savePoints()
-        if (points.isEmpty()) { cancelMode(); setStatus("All points cleared", "#ff3d71"); return }
+        if (points.isEmpty()) { cancelMode(); setStatus("All cleared", "#ff3d71"); return }
         deleteIndex = deleteIndex.coerceAtMost(points.size - 1)
         refreshDots()
         highlightDelete()
@@ -242,7 +249,7 @@ class FloatingButtonService : Service() {
 
     private fun highlightDelete() {
         dotsView?.setHighlight(deleteIndex)
-        setStatus("Selected #${deleteIndex+1} of ${points.size} — REMOVE or ◀▶", "#ff3d71")
+        setStatus("#${deleteIndex+1} of ${points.size} — DEL or ◀▶", "#ff3d71")
     }
 
     private fun onShowClick() {
@@ -259,7 +266,7 @@ class FloatingButtonService : Service() {
         refreshDots()
         btnShow.setBackgroundColor(Color.parseColor("#444444"))
         btnHide.setBackgroundColor(Color.parseColor("#00e5ff"))
-        setStatus("Dots hidden — ${points.size} active", "#8aabb0")
+        setStatus("Hidden — ${points.size} active", "#8aabb0")
     }
 
     private fun cancelMode() {
@@ -281,18 +288,18 @@ class FloatingButtonService : Service() {
 
     private fun showCrosshair() {
         hideCrosshair()
-        val size = 130
+        val size = 120
         val ch = object : View(this) {
-            private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            private val lp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.parseColor("#ff3d71"); strokeWidth = 4f; style = Paint.Style.STROKE }
-            private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            private val fp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.parseColor("#44ff3d71"); style = Paint.Style.FILL }
             override fun onDraw(canvas: Canvas) {
                 val cx = width / 2f; val cy = height / 2f
-                canvas.drawCircle(cx, cy, 40f, fillPaint)
-                canvas.drawCircle(cx, cy, 40f, linePaint)
-                canvas.drawLine(cx - 55f, cy, cx + 55f, cy, linePaint)
-                canvas.drawLine(cx, cy - 55f, cx, cy + 55f, linePaint)
+                canvas.drawCircle(cx, cy, 38f, fp)
+                canvas.drawCircle(cx, cy, 38f, lp)
+                canvas.drawLine(cx - 52f, cy, cx + 52f, cy, lp)
+                canvas.drawLine(cx, cy - 52f, cx, cy + 52f, lp)
             }
         }
 
@@ -303,9 +310,10 @@ class FloatingButtonService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (crosshairX - size / 2).toInt().coerceAtLeast(0)
-            y = (crosshairY - size / 2).toInt().coerceAtLeast(0)
+            x = 300; y = 400
         }
+        crosshairX = 300f + size / 2f
+        crosshairY = 400f + size / 2f
 
         var itx = 0f; var ity = 0f; var iox = 0; var ioy = 0
         ch.setOnTouchListener { _, e ->
@@ -327,7 +335,6 @@ class FloatingButtonService : Service() {
 
         wm.addView(ch, crosshairParams)
         crosshairView = ch
-        crosshairX = 400f; crosshairY = 400f
     }
 
     private fun hideCrosshair() {
@@ -341,15 +348,15 @@ class FloatingButtonService : Service() {
 
         private val fill   = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#CC00e5ff"); style = Paint.Style.FILL }
         private val hlFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#CCff3d71"); style = Paint.Style.FILL }
-        private val ring   = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 4f }
-        private val num    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 28f; textAlign = Paint.Align.CENTER; isFakeBoldText = true }
+        private val ring   = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 3f }
+        private val num    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 24f; textAlign = Paint.Align.CENTER; isFakeBoldText = true }
 
         override fun onDraw(canvas: Canvas) {
             if (!dotsVisible) return
             points.forEachIndexed { i, (x, y) ->
-                canvas.drawCircle(x, y, 30f, if (i == highlight) hlFill else fill)
-                canvas.drawCircle(x, y, 30f, ring)
-                canvas.drawText("${i+1}", x, y + 10f, num)
+                canvas.drawCircle(x, y, 26f, if (i == highlight) hlFill else fill)
+                canvas.drawCircle(x, y, 26f, ring)
+                canvas.drawText("${i+1}", x, y + 9f, num)
             }
         }
     }
@@ -390,21 +397,22 @@ class FloatingButtonService : Service() {
     }
 
     private fun makeBtn(label: String, bg: String, fg: String) = TextView(this).apply {
-        text = label; textSize = 11f
+        text = label
+        textSize = 10f
         setTextColor(Color.parseColor(fg))
         setBackgroundColor(Color.parseColor(bg))
-        setPadding(18, 12, 18, 12)
+        setPadding(8, 6, 8, 6)
         gravity = Gravity.CENTER
         typeface = android.graphics.Typeface.DEFAULT_BOLD
         layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { setMargins(0, 0, 0, 4) }
+        ).apply { setMargins(0, 0, 0, 3) }
     }
 
     private fun gap() = View(this).apply {
         layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 6) }
+            LinearLayout.LayoutParams.MATCH_PARENT, 5) }
 
     private fun buildNotification(): Notification {
         val id = "chk"
