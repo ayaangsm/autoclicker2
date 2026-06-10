@@ -1,0 +1,33 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build APK
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
+          unzip -q gradle-8.2-bin.zip
+          export ANDROID_HOME=$ANDROID_SDK_ROOT
+          ./gradle-8.2/bin/gradle assembleDebug
+        env:
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CheckboxClicker-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
