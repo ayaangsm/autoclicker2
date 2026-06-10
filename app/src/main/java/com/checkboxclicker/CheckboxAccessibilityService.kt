@@ -38,7 +38,7 @@ class CheckboxAccessibilityService : AccessibilityService() {
                     putExtra("count", count)
                     setPackage(packageName)
                 })
-            }, count * 400L)
+            }, count * 40L)
         }
     }
 
