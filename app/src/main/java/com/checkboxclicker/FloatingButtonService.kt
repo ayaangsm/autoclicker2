@@ -85,7 +85,7 @@ class FloatingButtonService : Service() {
             setPadding(6, 6, 6, 6)
         }
 
-        btnStart      = makeBtn("▶ START",   "#00e5ff", "#000000")
+        btnStart      = makeBtn("▶ START",   "#00e5ff", "#000000" 14f)
         btnAdd        = makeBtn("＋ ADD",     "#00ff88", "#000000")
         btnConfirm    = makeBtn("✓ CONFIRM", "#ffaa00", "#000000")
         btnDelete     = makeBtn("✕ DELETE",  "#ff3d71", "#ffffff")
